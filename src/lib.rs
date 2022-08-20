@@ -46,8 +46,8 @@ impl LinkDrop {
     /// Initializes the contract with an empty map for the accounts
     #[init]
     pub fn new() -> Self {
-        Self { 
-            accounts: UnorderedMap::new(b"a") 
+        Self {
+            accounts: UnorderedMap::new(b"a")
         }
     }
 
@@ -71,6 +71,26 @@ impl LinkDrop {
             env::current_account_id(),
             ACCESS_KEY_METHOD_NAMES.to_string(),
         )
+    }
+
+    #[payable]
+    pub fn send_with_many_key(&mut self, public_keys: &[PublicKey]) -> &[Promise] {
+        assert!(
+            env::attached_deposit() > ACCESS_KEY_ALLOWANCE,
+            "Attached deposit must be greater than ACCESS_KEY_ALLOWANCE"
+        );
+
+        assert!(
+            public_keys.len() > 0,
+            "No public key was given !"
+        );
+
+        let vector_pk = public_keys.to_vec();
+        vector_pk
+            .iter()
+            .map(|pk| self.send(*pk))
+            .collect()
+            .into()
     }
 
     /// Claim tokens for specific account that are attached to the public key this tx is signed with.
@@ -143,7 +163,7 @@ impl LinkDrop {
                     .with_static_gas(ON_CREATE_ACCOUNT_CALLBACK_GAS)
                     .on_account_created(
                         env::predecessor_account_id(),
-                        amount.into()
+                        amount.into(),
                     )
             )
     }
@@ -187,237 +207,237 @@ impl LinkDrop {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-#[cfg(test)]
-mod tests {
-    use near_sdk::test_utils::{VMContextBuilder};
-    use near_sdk::{testing_env};
-
-    use super::*;
-
-    fn linkdrop() -> AccountId {
-        "linkdrop".parse().unwrap()
-    }
-
-    fn bob() -> AccountId {
-        "bob".parse().unwrap()
-    }
-
-    #[test]
-    fn test_create_account() {
-        // Create a new instance of the linkdrop contract
-        let mut contract = LinkDrop::new();
-        // Create the public key to be used in the test
-        let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
-            .parse()
-            .unwrap();
-        // Default the deposit to an extremely small amount
-        let deposit = 1_000_000;
-
-        // Initialize the mocked blockchain
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .attached_deposit(deposit)
-            .context.clone()
-        );
-
-        // Create bob's account with the PK
-        contract.create_account(bob(), pk);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_create_invalid_account() {
-        // Create a new instance of the linkdrop contract
-        let mut contract = LinkDrop::new();
-        // Create the public key to be used in the test
-        let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
-            .parse()
-            .unwrap();
-        // Default the deposit to an extremely small amount
-        let deposit = 1_000_000;
-
-        // Initialize the mocked blockchain
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .attached_deposit(deposit)
-            .context.clone()
-        );
-
-        // Attempt to create an invalid account with the PK
-        contract.create_account("XYZ".parse().unwrap(), pk);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_get_missing_balance_panics() {
-        // Create a new instance of the linkdrop contract
-        let contract = LinkDrop::new();
-        // Create the public key to be used in the test
-        let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
-            .parse()
-            .unwrap();
-
-        // Initialize the mocked blockchain
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .context.clone()
-        );
-
-        contract.get_key_balance(pk);
-    }
-
-    #[test]
-    fn test_get_missing_balance_success() {
-        // Create a new instance of the linkdrop contract
-        let mut contract = LinkDrop::new();
-        // Create the public key to be used in the test
-        let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
-            .parse()
-            .unwrap();
-        // Default the deposit to be 100 times the access key allowance
-        let deposit = ACCESS_KEY_ALLOWANCE * 100;
-        
-        // Initialize the mocked blockchain
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .attached_deposit(deposit)
-            .context.clone()
-        );
-
-        // Create the linkdrop
-        contract.send(pk.clone());
-
-        // try getting the balance of the key
-        let balance:u128 = contract.get_key_balance(pk).0;
-        assert_eq!(
-            balance,
-            deposit - ACCESS_KEY_ALLOWANCE
-        );
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_claim_invalid_account() {
-        // Create a new instance of the linkdrop contract
-        let mut contract = LinkDrop::new();
-        // Create the public key to be used in the test
-        let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
-            .parse()
-            .unwrap();
-        // Default the deposit to be 100 times the access key allowance
-        let deposit = ACCESS_KEY_ALLOWANCE * 100;
-        
-        // Initialize the mocked blockchain
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .attached_deposit(deposit)
-            .context.clone()
-        );
-
-        // Create the linkdrop
-        contract.send(pk.clone());
-
-        // Now, send new transaction to linkdrop contract and reinitialize the mocked blockchain with new params
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .predecessor_account_id(linkdrop())
-            .signer_account_pk(pk.into())
-            .account_balance(deposit)
-            .context.clone()
-        );
-
-        // Create the second public key
-        let pk2 = "2S87aQ1PM9o6eBcEXnTR5yBAVRTiNmvj8J8ngZ6FzSca"
-            .parse()
-            .unwrap();
-        // Attempt to create the account and claim
-        contract.create_account_and_claim("XYZ".parse().unwrap(), pk2);
-    }
-
-    #[test]
-    fn test_drop_claim() {
-        // Create a new instance of the linkdrop contract
-        let mut contract = LinkDrop::new();
-        // Create the public key to be used in the test
-        let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
-            .parse()
-            .unwrap();
-        // Default the deposit to be 100 times the access key allowance
-        let deposit = ACCESS_KEY_ALLOWANCE * 100;
-        
-        // Initialize the mocked blockchain
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .attached_deposit(deposit)
-            .context.clone()
-        );
-
-        // Create the linkdrop
-        contract.send(pk.clone());
-
-        // Now, send new transaction to linkdrop contract and reinitialize the mocked blockchain with new params
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .predecessor_account_id(linkdrop())
-            .signer_account_pk(pk.into())
-            .account_balance(deposit)
-            .context.clone()
-        );
-
-        // Create the second public key
-        let pk2 = "2S87aQ1PM9o6eBcEXnTR5yBAVRTiNmvj8J8ngZ6FzSca"
-            .parse()
-            .unwrap();
-        // Attempt to create the account and claim
-        contract.create_account_and_claim(bob(), pk2);
-    }
-
-    #[test]
-    fn test_send_two_times() {
-        // Create a new instance of the linkdrop contract
-        let mut contract = LinkDrop::new();
-        // Create the public key to be used in the test
-        let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
-            .parse()
-            .unwrap();
-        // Default the deposit to be 100 times the access key allowance
-        let deposit = ACCESS_KEY_ALLOWANCE * 100;
-        
-        // Initialize the mocked blockchain
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .attached_deposit(deposit)
-            .context.clone()
-        );
-
-        // Create the linkdrop
-        contract.send(pk.clone());
-        assert_eq!(contract.get_key_balance(pk.clone()), (deposit - ACCESS_KEY_ALLOWANCE).into());
-
-        // Re-initialize the mocked blockchain with new params
-        testing_env!(
-            VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .account_balance(deposit)
-            .attached_deposit(deposit + 1)
-            .context.clone()
-        );
-
-        // Attempt to recreate the same linkdrop twice
-        contract.send(pk.clone());
-        assert_eq!(
-            contract.accounts.get(&pk.into()).unwrap(),
-            deposit + deposit + 1 - 2 * ACCESS_KEY_ALLOWANCE
-        );
-    }
-}
+// #[cfg(not(target_arch = "wasm32"))]
+// #[cfg(test)]
+// mod tests {
+//     use near_sdk::test_utils::{VMContextBuilder};
+//     use near_sdk::{testing_env};
+//
+//     use super::*;
+//
+//     fn linkdrop() -> AccountId {
+//         "linkdrop".parse().unwrap()
+//     }
+//
+//     fn bob() -> AccountId {
+//         "bob".parse().unwrap()
+//     }
+//
+//     #[test]
+//     fn test_create_account() {
+//         // Create a new instance of the linkdrop contract
+//         let mut contract = LinkDrop::new();
+//         // Create the public key to be used in the test
+//         let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
+//             .parse()
+//             .unwrap();
+//         // Default the deposit to an extremely small amount
+//         let deposit = 1_000_000;
+//
+//         // Initialize the mocked blockchain
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .attached_deposit(deposit)
+//             .context.clone()
+//         );
+//
+//         // Create bob's account with the PK
+//         contract.create_account(bob(), pk);
+//     }
+//
+//     #[test]
+//     #[should_panic]
+//     fn test_create_invalid_account() {
+//         // Create a new instance of the linkdrop contract
+//         let mut contract = LinkDrop::new();
+//         // Create the public key to be used in the test
+//         let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
+//             .parse()
+//             .unwrap();
+//         // Default the deposit to an extremely small amount
+//         let deposit = 1_000_000;
+//
+//         // Initialize the mocked blockchain
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .attached_deposit(deposit)
+//             .context.clone()
+//         );
+//
+//         // Attempt to create an invalid account with the PK
+//         contract.create_account("XYZ".parse().unwrap(), pk);
+//     }
+//
+//     #[test]
+//     #[should_panic]
+//     fn test_get_missing_balance_panics() {
+//         // Create a new instance of the linkdrop contract
+//         let contract = LinkDrop::new();
+//         // Create the public key to be used in the test
+//         let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
+//             .parse()
+//             .unwrap();
+//
+//         // Initialize the mocked blockchain
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .context.clone()
+//         );
+//
+//         contract.get_key_balance(pk);
+//     }
+//
+//     #[test]
+//     fn test_get_missing_balance_success() {
+//         // Create a new instance of the linkdrop contract
+//         let mut contract = LinkDrop::new();
+//         // Create the public key to be used in the test
+//         let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
+//             .parse()
+//             .unwrap();
+//         // Default the deposit to be 100 times the access key allowance
+//         let deposit = ACCESS_KEY_ALLOWANCE * 100;
+//
+//         // Initialize the mocked blockchain
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .attached_deposit(deposit)
+//             .context.clone()
+//         );
+//
+//         // Create the linkdrop
+//         contract.send(pk.clone());
+//
+//         // try getting the balance of the key
+//         let balance: u128 = contract.get_key_balance(pk).0;
+//         assert_eq!(
+//             balance,
+//             deposit - ACCESS_KEY_ALLOWANCE
+//         );
+//     }
+//
+//     #[test]
+//     #[should_panic]
+//     fn test_claim_invalid_account() {
+//         // Create a new instance of the linkdrop contract
+//         let mut contract = LinkDrop::new();
+//         // Create the public key to be used in the test
+//         let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
+//             .parse()
+//             .unwrap();
+//         // Default the deposit to be 100 times the access key allowance
+//         let deposit = ACCESS_KEY_ALLOWANCE * 100;
+//
+//         // Initialize the mocked blockchain
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .attached_deposit(deposit)
+//             .context.clone()
+//         );
+//
+//         // Create the linkdrop
+//         contract.send(pk.clone());
+//
+//         // Now, send new transaction to linkdrop contract and reinitialize the mocked blockchain with new params
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .predecessor_account_id(linkdrop())
+//             .signer_account_pk(pk.into())
+//             .account_balance(deposit)
+//             .context.clone()
+//         );
+//
+//         // Create the second public key
+//         let pk2 = "2S87aQ1PM9o6eBcEXnTR5yBAVRTiNmvj8J8ngZ6FzSca"
+//             .parse()
+//             .unwrap();
+//         // Attempt to create the account and claim
+//         contract.create_account_and_claim("XYZ".parse().unwrap(), pk2);
+//     }
+//
+//     #[test]
+//     fn test_drop_claim() {
+//         // Create a new instance of the linkdrop contract
+//         let mut contract = LinkDrop::new();
+//         // Create the public key to be used in the test
+//         let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
+//             .parse()
+//             .unwrap();
+//         // Default the deposit to be 100 times the access key allowance
+//         let deposit = ACCESS_KEY_ALLOWANCE * 100;
+//
+//         // Initialize the mocked blockchain
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .attached_deposit(deposit)
+//             .context.clone()
+//         );
+//
+//         // Create the linkdrop
+//         contract.send(pk.clone());
+//
+//         // Now, send new transaction to linkdrop contract and reinitialize the mocked blockchain with new params
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .predecessor_account_id(linkdrop())
+//             .signer_account_pk(pk.into())
+//             .account_balance(deposit)
+//             .context.clone()
+//         );
+//
+//         // Create the second public key
+//         let pk2 = "2S87aQ1PM9o6eBcEXnTR5yBAVRTiNmvj8J8ngZ6FzSca"
+//             .parse()
+//             .unwrap();
+//         // Attempt to create the account and claim
+//         contract.create_account_and_claim(bob(), pk2);
+//     }
+//
+//     #[test]
+//     fn test_send_two_times() {
+//         // Create a new instance of the linkdrop contract
+//         let mut contract = LinkDrop::new();
+//         // Create the public key to be used in the test
+//         let pk: PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
+//             .parse()
+//             .unwrap();
+//         // Default the deposit to be 100 times the access key allowance
+//         let deposit = ACCESS_KEY_ALLOWANCE * 100;
+//
+//         // Initialize the mocked blockchain
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .attached_deposit(deposit)
+//             .context.clone()
+//         );
+//
+//         // Create the linkdrop
+//         contract.send(pk.clone());
+//         assert_eq!(contract.get_key_balance(pk.clone()), (deposit - ACCESS_KEY_ALLOWANCE).into());
+//
+//         // Re-initialize the mocked blockchain with new params
+//         testing_env!(
+//             VMContextBuilder::new()
+//             .current_account_id(linkdrop())
+//             .account_balance(deposit)
+//             .attached_deposit(deposit + 1)
+//             .context.clone()
+//         );
+//
+//         // Attempt to recreate the same linkdrop twice
+//         contract.send(pk.clone());
+//         assert_eq!(
+//             contract.accounts.get(&pk.into()).unwrap(),
+//             deposit + deposit + 1 - 2 * ACCESS_KEY_ALLOWANCE
+//         );
+//     }
+// }
